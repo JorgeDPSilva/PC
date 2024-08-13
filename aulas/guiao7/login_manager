@@ -1,0 +1,83 @@
+-module(login_manager).
+-export([start/0,create_account/2, close_account/2, login/2, logout/1, online/0]).
+
+start() ->
+    register(login_manager,spawn(fun() -> loop(#{}) end)).
+
+
+create_account(Username, Passwd) ->
+    login_manager ! {create_account,Username,Passwd,self()},
+    receive 
+        {Result, login_manager} -> Result 
+    end.
+
+close_account(Username, Passwd) ->
+    login_manager ! {close_account, Username, Passwd, self()},
+    receive 
+        {Result, login_manager} -> Result 
+    end.
+
+login(Username, Passwd) ->
+    login_manager ! {login, Username, Passwd, self()},
+    receive
+        {Result, login_manager} -> Result
+    end.
+
+logout(Username) ->
+    login_manager ! {logout, Username, self()},
+    receive
+        {Result, login_manager} -> Result
+    end.
+
+online() ->
+    login_manager ! {online, self()},
+    receive
+        {Result, login_manager} -> Result
+    end.
+
+
+loop(Map) ->
+    receive
+        {create_account,Username,Passwd,From} ->
+            case maps:is_key(Username, Map) of
+                true ->
+                    From ! {user_exists, login_manager},
+                    loop(Map);
+                false ->
+                    NewMap = maps:put(Username, {Passwd, true}, Map),
+                    From ! {ok, login_manager},
+                    loop(NewMap)
+        end;
+        {close_account, Username, Passwd, From} ->
+            % username existir e a password ser aquela
+            case maps:find(Username, Map) of
+                {ok,{Passwd,_}} -> 
+                    From ! {ok,login_manager}
+                    loop(maps:remove(Username,Map));
+                _ -> 
+                    From ! {invalid,login_manager},
+                    loop(Map);
+        end;
+        {login, Username, Passwd, From} ->
+            case maps:find(Username, Map) of
+                {ok, {Passwd, _}} ->
+                    From ! {ok, login_manager},
+                    loop(maps:update(Username,{Passwd,true},Map));
+                _ ->
+                    From ! {invalid, login_manager},
+                    loop(Map)
+        end;
+        {logout, Username, From} ->
+            case maps:find(Username, Map) of
+                % caso encontre o user e esteja logado dá logout ou seja passwd fica a false
+                {ok,{Passwd,true}} ->
+                    From ! {ok, login_manager},
+                    loop(maps:update(Username,{Passwd,false},Map));
+                _ ->
+                    From ! {ok, login_manager},
+                    loop(Map)
+        end;
+        {online, From} ->
+            loop(maps:fold(fun(Username, {Passwd, true}, Acc)));
+            
+    
